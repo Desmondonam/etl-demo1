@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple ETL Demo</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom styles for Inter font and general layout */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f2f5; /* Light gray background */
+            display: flex;
+            justify-content: center;
+            align-items: flex-start; /* Align to top */
+            min-height: 100vh;
+            padding: 2rem;
+            box-sizing: border-box;
+        }
+        .container {
+            background-color: #ffffff;
+            border-radius: 1rem; /* More rounded corners */
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1); /* Softer shadow */
+            padding: 2.5rem;
+            width: 100%;
+            max-width: 900px; /* Max width for better readability on large screens */
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem; /* Space between sections */
+        }
+        .section-title {
+            font-size: 1.75rem; /* Larger title */
+            font-weight: 700; /* Bold */
+            color: #1a202c; /* Darker text */
+            margin-bottom: 1rem;
+            text-align: center;
+        }
+        .button-group {
+            display: flex;
+            flex-wrap: wrap; /* Allow buttons to wrap on smaller screens */
+            gap: 1rem; /* Space between buttons */
+            justify-content: center;
+            margin-bottom: 1.5rem;
+        }
+        .action-button {
+            padding: 0.8rem 1.8rem;
+            border-radius: 0.75rem; /* Rounded buttons */
+            font-weight: 600; /* Semi-bold */
+            transition: all 0.2s ease-in-out;
+            cursor: pointer;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); /* Button shadow */
+        }
+        .action-button:hover {
+            transform: translateY(-2px); /* Slight lift on hover */
+            box-shadow: 0 6px 10px rgba(0, 0, 0, 0.15);
+        }
+        .action-button:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        .extract-btn {
+            background-color: #4CAF50; /* Green */
+            color: white;
+        }
+        .transform-btn {
+            background-color: #2196F3; /* Blue */
+            color: white;
+        }
+        .load-btn {
+            background-color: #FFC107; /* Amber */
+            color: #333;
+        }
+        .reset-btn {
+            background-color: #F44336; /* Red */
+            color: white;
+        }
+        .output-area {
+            background-color: #f8fafc; /* Lighter background for output */
+            border: 1px solid #e2e8f0; /* Light border */
+            border-radius: 0.75rem;
+            padding: 1.5rem;
+            min-height: 150px;
+            overflow-x: auto; /* Allow horizontal scrolling for wide content */
+            white-space: pre-wrap; /* Preserve whitespace and wrap text */
+            font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace; /* Monospace font for data */
+            color: #2d3748; /* Darker text */
+            font-size: 0.9rem;
+        }
+        .status-message {
+            margin-top: 1rem;
+            padding: 0.75rem 1rem;
+            border-radius: 0.5rem;
+            font-weight: 500;
+            text-align: center;
+        }
+        .status-success {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .status-error {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="section-title">Simple ETL Pipeline Demonstration</h1>
+
+        <div class="button-group">
+            <button id="extractBtn" class="action-button extract-btn">Extract Data</button>
+            <button id="transformBtn" class="action-button transform-btn">Transform Data</button>
+            <button id="loadBtn" class="action-button load-btn">Load Data</button>
+            <button id="resetBtn" class="action-button reset-btn">Reset Pipeline</button>
+        </div>
+
+        <div id="statusMessage" class="status-message hidden"></div>
+
+        <div>
+            <h2 class="text-xl font-semibold text-gray-800 mb-3">Output:</h2>
+            <pre id="outputDisplay" class="output-area"></pre>
+        </div>
+    </div>
+
+    <script>
+        // Define the base URL for your backend API.
+        // If running locally, it's typically http://127.0.0.1:5000 or http://localhost:5000
+        // When deployed on Vercel, it will be the same domain as your frontend.
+        const API_BASE_URL = window.location.origin; // This will automatically use the current domain
+        // const API_BASE_URL = 'http://127.0.0.1:5000';
+
+        const extractBtn = document.getElementById('extractBtn');
+        const transformBtn = document.getElementById('transformBtn');
+        const loadBtn = document.getElementById('loadBtn');
+        const resetBtn = document.getElementById('resetBtn');
+        const outputDisplay = document.getElementById('outputDisplay');
+        const statusMessageDiv = document.getElementById('statusMessage');
+
+        /**
+         * Displays a status message to the user.
+         * @param {string} message - The message to display.
+         * @param {boolean} isError - True if it's an error message, false for success.
+         */
+        function showStatusMessage(message, isError = false) {
+            statusMessageDiv.textContent = message;
+            statusMessageDiv.classList.remove('hidden', 'status-success', 'status-error');
+            if (isError) {
+                statusMessageDiv.classList.add('status-error');
+            } else {
+                statusMessageDiv.classList.add('status-success');
+            }
+            // Hide message after 5 seconds
+            setTimeout(() => {
+                statusMessageDiv.classList.add('hidden');
+            }, 5000);
+        }
+
+        /**
+         * Makes an asynchronous POST request to the specified API endpoint.
+         * @param {string} endpoint - The API endpoint (e.g., '/extract').
+         * @returns {Promise<Object|null>} - A promise that resolves with the JSON response, or null on error.
+         */
+        async function callApi(endpoint) {
+            outputDisplay.textContent = 'Processing...';
+            showStatusMessage('Sending request...', false);
+            try {
+                const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    // body: JSON.stringify({}) // No body needed for these simple POSTs
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    showStatusMessage(`Error: ${data.message || response.statusText}`, true);
+                    outputDisplay.textContent = `Error: ${JSON.stringify(data, null, 2)}`;
+                    return null;
+                }
+
+                showStatusMessage(data.message, false);
+                outputDisplay.textContent = JSON.stringify(data.data, null, 2); // Pretty print JSON
+                return data;
+
+            } catch (error) {
+                console.error('API call failed:', error);
+                showStatusMessage(`Network error or API is unreachable: ${error.message}`, true);
+                outputDisplay.textContent = `Failed to connect to the backend. Please check the console for details.`;
+                return null;
+            }
+        }
+
+        // --- Event Listeners for Buttons ---
+        extractBtn.addEventListener('click', () => callApi('/extract'));
+        transformBtn.addEventListener('click', () => callApi('/transform'));
+        loadBtn.addEventListener('click', () => callApi('/load'));
+        resetBtn.addEventListener('click', () => {
+            callApi('/reset').then(result => {
+                if (result) {
+                    outputDisplay.textContent = 'Pipeline state has been reset.';
+                }
+            });
+        });
+
+        // Initial message
+        outputDisplay.textContent = 'Click a button to start the ETL process.';
+    </script>
+</body>
+</html>
